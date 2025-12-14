@@ -616,80 +616,150 @@ func enrollVenafiCertificate(ctx context.Context, d *schema.ResourceData, cl end
 		}
 
 		// Set the CSR in the request
-		req.SetCSR(csrBytes)
+		if err = req.SetCSR(csrBytes); err != nil {
+			return fmt.Errorf("error setting CSR: %s", err)
+		}
 
 		tflog.Info(ctx, fmt.Sprintf("Successfully loaded CSR with CN: %s", csr.Subject.CommonName))
 	}
 
 	//setting DN values Org, Organization Units, Country, State, Locality(City)
-	country := d.Get("country").(string)
-	if country != "" {
-		req.Subject.Country = []string{country}
-	}
-	state := d.Get("state").(string)
-	if state != "" {
-		req.Subject.Province = []string{state}
-	}
-	locality := d.Get("locality").(string)
-	if locality != "" {
-		req.Subject.Locality = []string{locality}
-	}
-	org := d.Get("organization").(string)
-	if org != "" {
-		req.Subject.Organization = []string{org}
-	}
-	orgUnits := d.Get("organizational_units").([]interface{})
-	for _, orgUnit := range orgUnits {
-		orgUnitStr := orgUnit.(string)
-		req.Subject.OrganizationalUnit = append(req.Subject.OrganizationalUnit, orgUnitStr)
+	// Skip these when using a user-provided CSR as the information comes from the CSR
+	if origin != csrFile {
+		country := d.Get("country").(string)
+		if country != "" {
+			req.Subject.Country = []string{country}
+		}
+		state := d.Get("state").(string)
+		if state != "" {
+			req.Subject.Province = []string{state}
+		}
+		locality := d.Get("locality").(string)
+		if locality != "" {
+			req.Subject.Locality = []string{locality}
+		}
+		org := d.Get("organization").(string)
+		if org != "" {
+			req.Subject.Organization = []string{org}
+		}
+		orgUnits := d.Get("organizational_units").([]interface{})
+		for _, orgUnit := range orgUnits {
+			orgUnitStr := orgUnit.(string)
+			req.Subject.OrganizationalUnit = append(req.Subject.OrganizationalUnit, orgUnitStr)
+		}
 	}
 
 	//Configuring keys
-	keyType := d.Get("algorithm").(string)
-
+	// Skip key configuration when using a user-provided CSR
 	var keyPassword string
-	if pass, ok := d.GetOk("key_password"); ok {
-		keyPassword = pass.(string)
-		req.KeyPassword = keyPassword
-	}
+	if origin != csrFile {
+		keyType := d.Get("algorithm").(string)
 
-	if keyType == "RSA" || len(keyType) == 0 {
-		req.KeyLength = d.Get("rsa_bits").(int)
-		req.KeyType = certificate.KeyTypeRSA
-	} else if keyType == "ECDSA" {
-		keyCurve := d.Get("ecdsa_curve").(string)
-		req.KeyType = certificate.KeyTypeECDSA
-		err := req.KeyCurve.Set(keyCurve)
-		if err != nil {
-			return err
+		if pass, ok := d.GetOk("key_password"); ok {
+			keyPassword = pass.(string)
+			req.KeyPassword = keyPassword
 		}
-	} else {
-		return fmt.Errorf("can't determine key algorithm %s", keyType)
+
+		if keyType == "RSA" || len(keyType) == 0 {
+			req.KeyLength = d.Get("rsa_bits").(int)
+			req.KeyType = certificate.KeyTypeRSA
+		} else if keyType == "ECDSA" {
+			keyCurve := d.Get("ecdsa_curve").(string)
+			req.KeyType = certificate.KeyTypeECDSA
+			err := req.KeyCurve.Set(keyCurve)
+			if err != nil {
+				return err
+			}
+		} else {
+			return fmt.Errorf("can't determine key algorithm %s", keyType)
+		}
 	}
 
 	//Setting up Subject
-	commonName := d.Get("common_name").(string)
-	//Adding alt names if exists
-	dnsNum := d.Get("san_dns.#").(int)
-	if dnsNum > 0 {
-		for i := 0; i < dnsNum; i++ {
-			key := fmt.Sprintf("san_dns.%d", i)
-			val := d.Get(key).(string)
-			tflog.Info(ctx, fmt.Sprintf("Adding SAN %s.", val))
-			req.DNSNames = append(req.DNSNames, val)
+	// Skip subject setup when using a user-provided CSR
+	var commonName string
+	if origin != csrFile {
+		commonName = d.Get("common_name").(string)
+	} else {
+		commonName = d.Get("common_name").(string)
+		if commonName == "" {
+			return fmt.Errorf("common_name is required even when using a CSR file")
 		}
 	}
+	//Adding alt names if exists
+	// Skip SANs when using a user-provided CSR as they come from the CSR
+	if origin != csrFile {
+		dnsNum := d.Get("san_dns.#").(int)
+		if dnsNum > 0 {
+			for i := 0; i < dnsNum; i++ {
+				key := fmt.Sprintf("san_dns.%d", i)
+				val := d.Get(key).(string)
+				tflog.Info(ctx, fmt.Sprintf("Adding SAN %s.", val))
+				req.DNSNames = append(req.DNSNames, val)
+			}
+		}
 
-	if len(commonName) == 0 && len(req.DNSNames) == 0 {
-		return fmt.Errorf("no domains specified on certificate")
+		if len(commonName) == 0 && len(req.DNSNames) == 0 {
+			return fmt.Errorf("no domains specified on certificate")
+		}
+		if len(commonName) == 0 && len(req.DNSNames) > 0 {
+			commonName = req.DNSNames[0]
+		}
+		if !sliceContains(req.DNSNames, commonName) {
+			tflog.Info(ctx, fmt.Sprintf("Adding CN %s to SAN %s because it wasn't included.", commonName, req.DNSNames))
+			req.DNSNames = append(req.DNSNames, commonName)
+		}
+
+		emailNum := d.Get("san_email.#").(int)
+		if emailNum > 0 {
+			for i := 0; i < emailNum; i++ {
+				key := fmt.Sprintf("san_email.%d", i)
+				val := d.Get(key).(string)
+				req.EmailAddresses = append(req.EmailAddresses, val)
+			}
+		}
+		ipNum := d.Get("san_ip.#").(int)
+		if ipNum > 0 {
+			ipList := make([]string, 0, ipNum)
+			for i := 0; i < ipNum; i++ {
+				key := fmt.Sprintf("san_ip.%d", i)
+				val := d.Get(key).(string)
+				ipList = append(ipList, val)
+			}
+			for i := 0; i < len(ipList); i += 1 {
+				ip := net.ParseIP(ipList[i])
+				if ip == nil {
+					return fmt.Errorf("invalid IP address %#v", ipList[i])
+				}
+				req.IPAddresses = append(req.IPAddresses, ip)
+			}
+		}
+		sanUriLen := d.Get("san_uri.#").(int)
+		if sanUriLen > 0 {
+			uriList := make([]string, 0, sanUriLen)
+			for i := 0; i < sanUriLen; i++ {
+				key := fmt.Sprintf("san_uri.%d", i)
+				val := d.Get(key).(string)
+				uriList = append(uriList, val)
+			}
+			for i := 0; i < len(uriList); i += 1 {
+				uri, err := url.Parse(uriList[i])
+				if err != nil {
+					return fmt.Errorf("invalid URI: %s", err.Error())
+				}
+				req.URIs = append(req.URIs, uri)
+			}
+		}
+
+		//Appending common name to the DNS names if it is not there
+		if !sliceContains(req.DNSNames, commonName) {
+			tflog.Info(ctx, fmt.Sprintf("Adding CN %s to SAN because it wasn't included.", commonName))
+			req.DNSNames = append(req.DNSNames, commonName)
+		}
+
+		tflog.Info(ctx, fmt.Sprintf("Requested SAN: %s", req.DNSNames))
 	}
-	if len(commonName) == 0 && len(req.DNSNames) > 0 {
-		commonName = req.DNSNames[0]
-	}
-	if !sliceContains(req.DNSNames, commonName) {
-		tflog.Info(ctx, fmt.Sprintf("Adding CN %s to SAN %s because it wasn't included.", commonName, req.DNSNames))
-		req.DNSNames = append(req.DNSNames, commonName)
-	}
+
 	if cl.GetType() == endpoint.ConnectorTypeTPP {
 		friendlyName := d.Get(venafiCertificateAttrNickname).(string)
 		if friendlyName != "" {
@@ -699,56 +769,9 @@ func enrollVenafiCertificate(ctx context.Context, d *schema.ResourceData, cl end
 
 	//Obtain a certificate from the CyberArk server
 	tflog.Info(ctx, fmt.Sprintf("Using CN %s and SAN %s", commonName, req.DNSNames))
-	req.Subject.CommonName = commonName
-
-	emailNum := d.Get("san_email.#").(int)
-	if emailNum > 0 {
-		for i := 0; i < emailNum; i++ {
-			key := fmt.Sprintf("san_email.%d", i)
-			val := d.Get(key).(string)
-			req.EmailAddresses = append(req.EmailAddresses, val)
-		}
+	if origin != csrFile {
+		req.Subject.CommonName = commonName
 	}
-	ipNum := d.Get("san_ip.#").(int)
-	if ipNum > 0 {
-		ipList := make([]string, 0, ipNum)
-		for i := 0; i < ipNum; i++ {
-			key := fmt.Sprintf("san_ip.%d", i)
-			val := d.Get(key).(string)
-			ipList = append(ipList, val)
-		}
-		for i := 0; i < len(ipList); i += 1 {
-			ip := net.ParseIP(ipList[i])
-			if ip == nil {
-				return fmt.Errorf("invalid IP address %#v", ipList[i])
-			}
-			req.IPAddresses = append(req.IPAddresses, ip)
-		}
-	}
-	sanUriLen := d.Get("san_uri.#").(int)
-	if sanUriLen > 0 {
-		uriList := make([]string, 0, sanUriLen)
-		for i := 0; i < sanUriLen; i++ {
-			key := fmt.Sprintf("san_uri.%d", i)
-			val := d.Get(key).(string)
-			uriList = append(uriList, val)
-		}
-		for i := 0; i < len(uriList); i += 1 {
-			uri, err := url.Parse(uriList[i])
-			if err != nil {
-				return fmt.Errorf("invalid URI: %s", err.Error())
-			}
-			req.URIs = append(req.URIs, uri)
-		}
-	}
-
-	//Appending common name to the DNS names if it is not there
-	if !sliceContains(req.DNSNames, commonName) {
-		tflog.Info(ctx, fmt.Sprintf("Adding CN %s to SAN because it wasn't included.", commonName))
-		req.DNSNames = append(req.DNSNames, commonName)
-	}
-
-	tflog.Info(ctx, fmt.Sprintf("Requested SAN: %s", req.DNSNames))
 
 	if origin != csrService && origin != csrFile {
 		var err error
