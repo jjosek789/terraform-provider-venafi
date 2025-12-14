@@ -53,7 +53,7 @@ trust_bundle_path = "/path/to/bundle.pem"
 
 # Common variables
 common_name   = "example.venafi.com"
-csr_file_path = "./certificate.csr"
+csr_pem_file = "./certificate.csr"
 ```
 
 2. Initialize Terraform:

@@ -5,8 +5,8 @@ variable "common_name" {
   default     = "example.venafi.com"
 }
 
-variable "csr_file_path" {
-  description = "Path to the Certificate Signing Request (CSR) file in PEM format"
+variable "csr_pem_file" {
+  description = "Path to the Certificate Signing Request (CSR) file in PEM format. The file content will be read using Terraform's file() function."
   type        = string
   default     = "./certificate.csr"
 }

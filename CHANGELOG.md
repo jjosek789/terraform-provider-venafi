@@ -1,5 +1,5 @@
 ## Unreleased
-- Add support for user-provided Certificate Signing Requests (CSR) via `csr_file` parameter. This enables "Bring Your Own CSR" workflows, particularly useful for HSM-generated private keys where the private key cannot leave the secure hardware.
+- Add support for user-provided Certificate Signing Requests (CSR) via `csr_pem` attribute when `csr_origin="file"`. This enables "Bring Your Own CSR" workflows, particularly useful for HSM-generated private keys where the private key cannot leave the secure hardware. Usage: `csr_pem = file("path/to/csr.pem")` with Terraform's `file()` function or provide raw CSR PEM data directly.
 
 ## 0.23.0 (September 5th, 2025)
 - Add support to provide certificate tags for Venafi Control Plane.
