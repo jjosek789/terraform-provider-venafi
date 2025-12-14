@@ -600,9 +600,12 @@ func enrollVenafiCertificate(ctx context.Context, d *schema.ResourceData, cl end
 		}
 
 		// Parse the CSR to validate it and extract information
-		block, _ := pem.Decode(csrBytes)
+		block, rest := pem.Decode(csrBytes)
 		if block == nil || block.Type != "CERTIFICATE REQUEST" {
 			return fmt.Errorf("failed to decode PEM block containing CSR")
+		}
+		if len(rest) > 0 {
+			tflog.Warn(ctx, "CSR file contains extra data after the PEM block, which will be ignored")
 		}
 
 		csr, err := x509.ParseCertificateRequest(block.Bytes)
@@ -676,15 +679,10 @@ func enrollVenafiCertificate(ctx context.Context, d *schema.ResourceData, cl end
 	}
 
 	//Setting up Subject
-	// Skip subject setup when using a user-provided CSR
-	var commonName string
-	if origin != csrFile {
-		commonName = d.Get("common_name").(string)
-	} else {
-		commonName = d.Get("common_name").(string)
-		if commonName == "" {
-			return fmt.Errorf("common_name is required even when using a CSR file")
-		}
+	// Common name is required for tracking purposes even when using a user-provided CSR
+	commonName := d.Get("common_name").(string)
+	if origin == csrFile && commonName == "" {
+		return fmt.Errorf("common_name is required even when using a CSR file")
 	}
 	//Adding alt names if exists
 	// Skip SANs when using a user-provided CSR as they come from the CSR
