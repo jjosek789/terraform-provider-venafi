@@ -5,8 +5,8 @@ variable "common_name" {
   default     = "example.venafi.com"
 }
 
-variable "csr_file_path" {
-  description = "Path to the Certificate Signing Request (CSR) file in PEM format"
+variable "csr_pem_path" {
+  description = "Path to the Certificate Signing Request (CSR) file in PEM format (will be read using file() function)"
   type        = string
   default     = "./certificate.csr"
 }
