@@ -13,6 +13,7 @@ import (
 	"math"
 	"net"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -56,10 +57,17 @@ func resourceVenafiCertificate() *schema.Resource {
 			"csr_origin": {
 				Type:     schema.TypeString,
 				Optional: true,
-				Description: "Origin of the CSR. One of local or service. Local: The CSR will be generated locally and " +
-					"sent over for certificate issuance. Service: The CSR will be generated and managed by the CyberArk platform. Default is local",
+				Description: "Origin of the CSR. One of local, service, or file. Local: The CSR will be generated locally and " +
+					"sent over for certificate issuance. Service: The CSR will be generated and managed by the CyberArk platform. " +
+					"File: The CSR will be read from the file specified in csr_file. Default is local",
 				ForceNew: true,
 				Default:  "local",
+			},
+			"csr_file": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				ForceNew:    true,
+				Description: "Path to a file containing a Certificate Signing Request (CSR) in PEM format. Used when csr_origin is set to 'file'",
 			},
 			"common_name": {
 				Type:        schema.TypeString,
@@ -264,6 +272,12 @@ func resourceVenafiCertificateCreate(ctx context.Context, d *schema.ResourceData
 	//Add warning message when no password for private key was set and CSR origin is service.
 	if origin == csrService && !passOk {
 		detailMsg := "No key password provided for service generated CSR. Certificate contents (certificate, chain, private key) not stored in terraform state"
+		tflog.Info(ctx, detailMsg)
+	}
+
+	//Add info message when CSR origin is file
+	if origin == csrFile {
+		detailMsg := "User-provided CSR from file. Private key is managed externally and not stored in terraform state"
 		tflog.Info(ctx, detailMsg)
 	}
 
@@ -568,6 +582,43 @@ func enrollVenafiCertificate(ctx context.Context, d *schema.ResourceData, cl end
 	origin := d.Get("csr_origin").(string)
 	if origin == csrService {
 		req.CsrOrigin = certificate.ServiceGeneratedCSR
+	} else if origin == csrFile {
+		req.CsrOrigin = certificate.UserProvidedCSR
+	}
+
+	// Handle user-provided CSR from file
+	if origin == csrFile {
+		csrFilePath, ok := d.GetOk("csr_file")
+		if !ok || csrFilePath.(string) == "" {
+			return fmt.Errorf("csr_file must be specified when csr_origin is set to 'file'")
+		}
+
+		tflog.Info(ctx, fmt.Sprintf("Reading CSR from file: %s", csrFilePath.(string)))
+		csrBytes, err := os.ReadFile(csrFilePath.(string))
+		if err != nil {
+			return fmt.Errorf("error reading CSR file: %s", err)
+		}
+
+		// Parse the CSR to validate it and extract information
+		block, _ := pem.Decode(csrBytes)
+		if block == nil || block.Type != "CERTIFICATE REQUEST" {
+			return fmt.Errorf("failed to decode PEM block containing CSR")
+		}
+
+		csr, err := x509.ParseCertificateRequest(block.Bytes)
+		if err != nil {
+			return fmt.Errorf("error parsing CSR: %s", err)
+		}
+
+		// Verify the CSR signature
+		if err = csr.CheckSignature(); err != nil {
+			return fmt.Errorf("CSR signature verification failed: %s", err)
+		}
+
+		// Set the CSR in the request
+		req.SetCSR(csrBytes)
+
+		tflog.Info(ctx, fmt.Sprintf("Successfully loaded CSR with CN: %s", csr.Subject.CommonName))
 	}
 
 	//setting DN values Org, Organization Units, Country, State, Locality(City)
@@ -699,7 +750,7 @@ func enrollVenafiCertificate(ctx context.Context, d *schema.ResourceData, cl end
 
 	tflog.Info(ctx, fmt.Sprintf("Requested SAN: %s", req.DNSNames))
 
-	if origin != csrService {
+	if origin != csrService && origin != csrFile {
 		var err error
 		switch req.KeyType {
 		case certificate.KeyTypeECDSA:
@@ -786,6 +837,23 @@ func enrollVenafiCertificate(ctx context.Context, d *schema.ResourceData, cl end
 
 	if origin == csrService && keyPassword == "" {
 		// Nothing else to do here. Send warning message, certificate contents not stored in state
+		return nil
+	}
+
+	if origin == csrFile {
+		// For user-provided CSR, we only store the certificate and chain
+		// The private key is managed externally by the user
+		if err = d.Set("certificate", pcc.Certificate); err != nil {
+			return fmt.Errorf("error setting certificate: %s", err)
+		}
+		tflog.Info(ctx, fmt.Sprintf("Certificate set to %s", pcc.Certificate))
+
+		if err = d.Set("chain", strings.Join(pcc.Chain, "")); err != nil {
+			return fmt.Errorf("error setting chain: %s", err)
+		}
+		tflog.Info(ctx, fmt.Sprintf("Certificate chain set to %s", pcc.Chain))
+
+		tflog.Info(ctx, "User-provided CSR: Private key not stored in state")
 		return nil
 	}
 

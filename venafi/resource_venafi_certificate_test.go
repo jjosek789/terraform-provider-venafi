@@ -88,3 +88,67 @@ func TestDevSignedCertECDSA(t *testing.T) {
 		},
 	})
 }
+
+var devConfigWithCSRFile = `
+provider "venafi" {
+alias = "dev"
+dev_mode = true
+}
+resource "venafi_certificate" "dev_certificate_csr_file" {
+provider = "venafi.dev"
+common_name = "test.venafi.example.com"
+csr_origin = "file"
+csr_file = "%s"
+}
+output "certificate" {
+value = "${venafi_certificate.dev_certificate_csr_file.certificate}"
+}
+`
+
+func TestDevSignedCertWithCSRFile(t *testing.T) {
+t.Log("Testing Dev certificate with user-provided CSR file")
+csrPath := "../test_files/test-csr.pem"
+config := fmt.Sprintf(devConfigWithCSRFile, csrPath)
+t.Logf("Testing dev certificate with CSR file config:\n %s", config)
+resource.Test(t, resource.TestCase{
+ProviderFactories: testAccProviderFactories,
+Steps: []resource.TestStep{
+{
+Config: config,
+Check: func(s *terraform.State) error {
+// Check that certificate was created
+gotUntyped := s.RootModule().Resources["venafi_certificate.dev_certificate_csr_file"]
+if gotUntyped == nil {
+return fmt.Errorf("resource not found in state")
+}
+
+got := gotUntyped.Primary
+if got == nil {
+return fmt.Errorf("primary instance not found")
+}
+
+// Verify certificate is present
+cert := got.Attributes["certificate"]
+if cert == "" {
+return fmt.Errorf("certificate attribute is empty")
+}
+
+// Verify chain is present
+chain := got.Attributes["chain"]
+if chain == "" {
+return fmt.Errorf("chain attribute is empty")
+}
+
+// Verify private_key_pem is NOT present (managed externally)
+privateKey := got.Attributes["private_key_pem"]
+if privateKey != "" {
+return fmt.Errorf("private_key_pem should not be stored for user-provided CSR, but got: %s", privateKey)
+}
+
+t.Logf("Certificate with user-provided CSR successfully created")
+return nil
+},
+},
+},
+})
+}

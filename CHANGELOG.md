@@ -1,3 +1,6 @@
+## Unreleased
+- Add support for user-provided Certificate Signing Requests (CSR) via `csr_file` parameter. This enables "Bring Your Own CSR" workflows, particularly useful for HSM-generated private keys where the private key cannot leave the secure hardware.
+
 ## 0.23.0 (September 5th, 2025)
 - Add support to provide certificate tags for Venafi Control Plane.
 
