@@ -13,7 +13,6 @@ import (
 	"math"
 	"net"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -59,15 +58,9 @@ func resourceVenafiCertificate() *schema.Resource {
 				Optional: true,
 				Description: "Origin of the CSR. One of local, service, or file. Local: The CSR will be generated locally and " +
 					"sent over for certificate issuance. Service: The CSR will be generated and managed by the CyberArk platform. " +
-					"File: The CSR will be read from the file specified in csr_file. Default is local",
+					"File: The CSR will be provided via the csr_pem attribute. Default is local",
 				ForceNew: true,
 				Default:  "local",
-			},
-			"csr_file": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				ForceNew:    true,
-				Description: "Path to a file containing a Certificate Signing Request (CSR) in PEM format. Used when csr_origin is set to 'file'",
 			},
 			"common_name": {
 				Type:        schema.TypeString,
@@ -192,6 +185,10 @@ func resourceVenafiCertificate() *schema.Resource {
 				Type:     schema.TypeString,
 				Optional: true,
 				Computed: true,
+				Description: "Certificate Signing Request (CSR) in PEM format. " +
+					"When csr_origin is 'file', this should contain the user-provided CSR PEM data. " +
+					"For 'local' or 'service' origins, this is a computed output containing the generated CSR.",
+				ForceNew: true,
 			},
 			"pkcs12": {
 				Type:     schema.TypeString,
@@ -277,7 +274,7 @@ func resourceVenafiCertificateCreate(ctx context.Context, d *schema.ResourceData
 
 	//Add info message when CSR origin is file
 	if origin == csrFile {
-		detailMsg := "User-provided CSR from file. Private key is managed externally and not stored in terraform state"
+		detailMsg := "User-provided CSR via csr_pem attribute. Private key is managed externally and not stored in terraform state"
 		tflog.Info(ctx, detailMsg)
 	}
 
@@ -586,18 +583,15 @@ func enrollVenafiCertificate(ctx context.Context, d *schema.ResourceData, cl end
 		req.CsrOrigin = certificate.UserProvidedCSR
 	}
 
-	// Handle user-provided CSR from file
+	// Handle user-provided CSR from csr_pem
 	if origin == csrFile {
-		csrFilePath, ok := d.GetOk("csr_file")
-		if !ok || csrFilePath.(string) == "" {
-			return fmt.Errorf("csr_file must be specified when csr_origin is set to 'file'")
+		csrPem, ok := d.GetOk("csr_pem")
+		if !ok || csrPem.(string) == "" {
+			return fmt.Errorf("csr_pem must be specified when csr_origin is set to 'file'")
 		}
 
-		tflog.Info(ctx, fmt.Sprintf("Reading CSR from file: %s", csrFilePath.(string)))
-		csrBytes, err := os.ReadFile(csrFilePath.(string))
-		if err != nil {
-			return fmt.Errorf("error reading CSR file: %s", err)
-		}
+		csrBytes := []byte(csrPem.(string))
+		tflog.Info(ctx, "Processing user-provided CSR from csr_pem attribute")
 
 		// Parse the CSR to validate it and extract information
 		block, rest := pem.Decode(csrBytes)
@@ -605,7 +599,7 @@ func enrollVenafiCertificate(ctx context.Context, d *schema.ResourceData, cl end
 			return fmt.Errorf("failed to decode PEM block containing CSR")
 		}
 		if len(rest) > 0 {
-			tflog.Warn(ctx, "CSR file contains extra data after the PEM block, which will be ignored")
+			tflog.Warn(ctx, "CSR data contains extra data after the PEM block, which will be ignored")
 		}
 
 		csr, err := x509.ParseCertificateRequest(block.Bytes)

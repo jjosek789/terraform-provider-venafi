@@ -41,7 +41,7 @@ resource "venafi_certificate" "webserver" {
 resource "venafi_certificate" "hsm_certificate" {
     common_name = "hsm.venafi.example"
     csr_origin  = "file"
-    csr_file    = "/path/to/your/certificate.csr"
+    csr_pem     = file("/path/to/your/certificate.csr")
 }
 ```
 
@@ -98,18 +98,18 @@ Defaults to `168`.
 * `csr_origin` - (Optional, string) Origin of the CSR. One of `local`, `service`, or `file`. 
   - `local`: The CSR will be generated locally and sent over for certificate issuance (default).
   - `service`: The CSR will be generated and managed by the CyberArk platform.
-  - `file`: The CSR will be read from the file specified in `csr_file`.
-
-* `csr_file` - (Optional, string) Path to a file containing a Certificate Signing Request (CSR) in PEM format. 
-Required when `csr_origin` is set to `file`. This enables "Bring Your Own CSR" workflows, particularly useful for 
-HSM-generated private keys where the private key cannot leave the secure hardware. When using this option, the 
-private key is not stored in the Terraform state.
+  - `file`: The CSR will be provided via the `csr_pem` attribute.
 
 * `tags` - (Optional, set of strings) List of Certificate Tags defined in CyberArk Certificate Manager, SaaS.
 
 ## Attributes Reference
 
 The following attributes are exported:
+
+* `csr_pem` - The Certificate Signing Request (CSR) in PEM format. When `csr_origin` is `file`, this is an input attribute 
+containing the user-provided CSR (e.g., `csr_pem = file("path/to/csr.pem")`). For `local` or `service` origins, this is a 
+computed output containing the generated CSR. This enables "Bring Your Own CSR" workflows, particularly useful for 
+HSM-generated private keys where the private key cannot leave the secure hardware.
 
 * `private_key_pem` - The private key in PEM format.
 

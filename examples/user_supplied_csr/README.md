@@ -77,6 +77,7 @@ terraform apply
 ## Important Notes
 
 - **Private Key Management**: When using `csr_origin = "file"`, the private key is NOT stored in Terraform state. You must manage the private key separately and securely.
+- **CSR Input**: The CSR is provided via the `csr_pem` attribute using Terraform's `file()` function to read the CSR file content.
 - **Common Name**: The `common_name` variable should match the Common Name (CN) in your CSR.
 - **Certificate Chain**: The issued certificate and its chain are stored in the Terraform state and can be accessed via outputs.
 - **State Security**: Ensure your Terraform state is properly secured according to HashiCorp best practices.

@@ -89,27 +89,45 @@ func TestDevSignedCertECDSA(t *testing.T) {
 	})
 }
 
-var devConfigWithCSRFile = `
+var devConfigWithCSRPem = `
 provider "venafi" {
-alias = "dev"
-dev_mode = true
+	alias = "dev"
+	dev_mode = true
 }
-resource "venafi_certificate" "dev_certificate_csr_file" {
-provider = "venafi.dev"
-common_name = "test.venafi.example.com"
-csr_origin = "file"
-csr_file = "%s"
+resource "venafi_certificate" "dev_certificate_csr_pem" {
+	provider = "venafi.dev"
+	common_name = "test.venafi.example.com"
+	csr_origin = "file"
+	csr_pem = <<-EOT
+%s
+	EOT
 }
 output "certificate" {
-value = "${venafi_certificate.dev_certificate_csr_file.certificate}"
+	value = "${venafi_certificate.dev_certificate_csr_pem.certificate}"
 }
 `
 
-func TestDevSignedCertWithCSRFile(t *testing.T) {
-	t.Log("Testing Dev certificate with user-provided CSR file")
-	csrPath := "../test_files/test-csr.pem"
-	config := fmt.Sprintf(devConfigWithCSRFile, csrPath)
-	t.Logf("Testing dev certificate with CSR file config:\n %s", config)
+func TestDevSignedCertWithCSRPem(t *testing.T) {
+	t.Log("Testing Dev certificate with user-provided CSR via csr_pem")
+	csrData := `-----BEGIN CERTIFICATE REQUEST-----
+MIICuzCCAaMCAQAwdjELMAkGA1UEBhMCVVMxDTALBgNVBAgMBFRlc3QxETAPBgNV
+BAcMCFRlc3RDaXR5MRAwDgYDVQQKDAdUZXN0T3JnMREwDwYDVQQLDAhUZXN0VW5p
+dDEgMB4GA1UEAwwXdGVzdC52ZW5hZmkuZXhhbXBsZS5jb20wggEiMA0GCSqGSIb3
+DQEBAQUAA4IBDwAwggEKAoIBAQCrlJABNTyrXNr7lDf3zlZNRgJW2hpSw8F73bXj
+OHLsUuEagspNSPBDMY7zkAR+dE3ofhqMnw8sWNHNJ1tbQUyGab+S4QeAa+fsNnQy
+wDm6YNCq2AKJPCJQlIynVZsdDtpuQZRR5q2idx9k7jodTPllTTrC8u8OhttQfKrU
+2ZhOsJBGv3SZkxKbgNbWXlUtmXA5QrtmPh0IjH0Y3L7QCqDHGxBj/wNU6zes6suv
+DThCfj0if/QKeHYafyggX/3akZhN4yVeEkX63E07a1bpxzuN95e6h7jjraeMCos9
+viXh2SnTzMClxgmFwqCX2thLRyX/ob3BHEO7uRyIMPdltE63AgMBAAGgADANBgkq
+hkiG9w0BAQsFAAOCAQEAa4WP229ypqKq1xggFvPz+CrJSZv1f23gGNqbYdfuUGlP
+PZ5PmpCmbYcM5TigQGxXQhIXRiHiuFbkyBqLyy2A/SjvOnDq3rniCllTPe4qMfdX
+JvduqEAchYpfysiB8avZc8G8n9siwwz4KGGaxgaqwoh3AzIgjE90J97k5ao8KDjr
+zLs5UUjnFFXd5/wQI8ofPpqTRuopIQcJbjZijWKXPizflzQ7MuLuD6KbrDRverl9
+fD3qStsvIohbwRryQjCr7EEDgGUsF1eRyvH9GqJpv90TE2Xf/QBZVNquCtoRzCN/
+8Zg+50D4GnA5ic7zb5VhVEYwnntFkFwW9hwbZpYepA==
+-----END CERTIFICATE REQUEST-----`
+	config := fmt.Sprintf(devConfigWithCSRPem, csrData)
+	t.Logf("Testing dev certificate with CSR PEM config:\n %s", config)
 	resource.Test(t, resource.TestCase{
 		ProviderFactories: testAccProviderFactories,
 		Steps: []resource.TestStep{
@@ -117,7 +135,7 @@ func TestDevSignedCertWithCSRFile(t *testing.T) {
 				Config: config,
 				Check: func(s *terraform.State) error {
 					// Check that certificate was created
-					gotUntyped := s.RootModule().Resources["venafi_certificate.dev_certificate_csr_file"]
+					gotUntyped := s.RootModule().Resources["venafi_certificate.dev_certificate_csr_pem"]
 					if gotUntyped == nil {
 						return fmt.Errorf("resource not found in state")
 					}
