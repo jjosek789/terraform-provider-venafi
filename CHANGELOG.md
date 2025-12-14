@@ -1,5 +1,5 @@
 ## Unreleased
-- Add support for user-provided Certificate Signing Requests (CSR) via `csr_pem` parameter. This enables "Bring Your Own CSR" workflows, particularly useful for HSM-generated private keys where the private key cannot leave the secure hardware. Users can provide CSR data using `csr_pem = file("path/to/csr.pem")` or by providing raw CSR PEM data directly.
+- Add support for user-provided Certificate Signing Requests (CSR) by adding a new `file` value to the existing `csr_origin` parameter. This enables "Bring Your Own CSR" workflows, particularly useful for HSM-generated private keys where the private key cannot leave the secure hardware. When `csr_origin = "file"`, users provide CSR data via the `csr_pem` attribute using `csr_pem = file("path/to/csr.pem")` or by providing raw CSR PEM data directly.
 
 ## 0.23.0 (September 5th, 2025)
 - Add support to provide certificate tags for Venafi Control Plane.
