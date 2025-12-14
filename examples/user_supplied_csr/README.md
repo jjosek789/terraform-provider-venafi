@@ -52,8 +52,8 @@ trust_bundle_path = "/path/to/bundle.pem"
 # vaas_zone    = "Default"
 
 # Common variables
-common_name   = "example.venafi.com"
-csr_file_path = "./certificate.csr"
+common_name = "example.venafi.com"
+csr_path    = "./certificate.csr"
 ```
 
 2. Initialize Terraform:

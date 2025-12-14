@@ -2,6 +2,7 @@ package venafi
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -247,7 +248,7 @@ INVALID CSR DATA
 		Steps: []resource.TestStep{
 			{
 				Config:      config,
-				ExpectError: nil, // This will be validated during actual test run
+				ExpectError: regexp.MustCompile(`failed to decode PEM block containing CSR`),
 			},
 		},
 	})

@@ -26,5 +26,5 @@ provider "venafi" {
 resource "venafi_certificate" "user_csr_certificate" {
   common_name = var.common_name
   csr_origin  = "file"
-  csr_pem     = file(var.csr_file_path)
+  csr_pem     = file(var.csr_path)
 }
